@@ -39,7 +39,6 @@ valid user creds to login via the ssh service.
 
 -- Host enumeration:
 ====================
-
 OS: Linux Ubuntu
 Web Server: Apache 2.4.52
 Web App Technology: Flask Python 3.0
@@ -62,5 +61,7 @@ the use of the eval function with unsanitized user input to get RCE.
 On using the bash script that exploit this vuln, i got a rev shell on my system and then to gain root
 access, I exploited the bash command that was running with SUID bit set.
 
+The link to the github page that shows how to exploit the searchor sofware is as seen below:
 
+** https://github.com/nikn0laty/Exploit-for-Searchor-2.4.0-Arbitrary-CMD-Injection
 
