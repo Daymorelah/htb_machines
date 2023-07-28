@@ -1,0 +1,66 @@
+=====================================================================================================
+													******** HTB - machines: Busqueda ********
+=====================================================================================================
+
+Firstly I eported the IP as an env variable and ran an 'nmap' port scan on all ports on the target 
+machine.
+
+** export IP=10.10.11.208
+** nmap -n -Pn -p- $IP --open
+
+Nmap scan report for 10.10.11.208
+PORT     STATE SERVICE
+
+22/tcp   open  ssh
+80/tcp   open  http
+9000/tcp open  cslistener
+
+Next I will do a service enumeratio and run simple nmap scritos to find out more about the services up
+and running on the host with the below nmap command:
+
+** nmap -n -Pn -p22,80,9000 -sc -sV $IP
+
+Nmap scan report for 10.10.11.208
+Host is up (0.12s latency).
+
+PORT     STATE SERVICE     VERSION
+22/tcp   open  ssh         OpenSSH 8.9p1 Ubuntu 3ubuntu0.1 (Ubuntu Linux; protocol 2.0)
+| ssh-hostkey: 
+|   256 4f:e3:a6:67:a2:27:f9:11:8d:c3:0e:d7:73:a0:2c:28 (ECDSA)
+|_  256 81:6e:78:76:6b:8a:ea:7d:1b:ab:d4:36:b7:f8:ec:c4 (ED25519)
+80/tcp   open  http        Apache httpd 2.4.52
+|_http-server-header: Apache/2.4.52 (Ubuntu)
+|_http-title: Did not follow redirect to http://searcher.htb/
+9000/tcp open  cslistener?
+Service Info: Host: searcher.htb; OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+From the above scan, I will look into the web server running on port 80 since we have no ssh keys or
+valid user creds to login via the ssh service.
+
+-- Host enumeration:
+====================
+
+OS: Linux Ubuntu
+Web Server: Apache 2.4.52
+Web App Technology: Flask Python 3.0
+
+
+-- Exploitation walkthrough:
+============================
+On manual inspection of the website, there were no interesting links. Fuzzing for directory and file
+path didnt yield any positive result.
+
+Trying to exploit the only input filed on the web page via sqli and XSS didnt yield any positive thing 
+either.
+
+At the footer I saw the tech used to implement the searc functionality which was the 'searchor 2.4.0'
+sofware.
+
+On search for exploit on this software i came accross a git hub repo that exploited this software due to
+the use of the eval function with unsanitized user input to get RCE.
+
+On using the bash script that exploit this vuln, i got a rev shell on my system and then to gain root
+access, I exploited the bash command that was running with SUID bit set.
+
+
+
