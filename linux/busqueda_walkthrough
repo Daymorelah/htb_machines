@@ -65,3 +65,22 @@ The link to the github page that shows how to exploit the searchor sofware is as
 
 ** https://github.com/nikn0laty/Exploit-for-Searchor-2.4.0-Arbitrary-CMD-Injection
 
+Another interesting way to go about root the machine is to look for creds in the .git/config file for 
+user creds.
+
+With this when we do a 'sudo -l' for the svc use we use the password for the .git/config fiel to login
+at the sudo comman.
+
+From here we see that usr svc cna run '/usr/bin/python3 /opt/scripts/system-checkup.py' as root
+
+On runnig this command we see that we need to add some sub-comands to it. On testing each of the sub-cmd
+we see that the 'full=-checkup' sub-cmd is givin error.
+
+This usually means that there is a missing file the sub-cmd is looking for an d thus the error.
+
+We can create a malicious file with the filename of the expected file with a python rev-shell.
+
+To read this file we use thecreds to open the gitea account and view the contents of the file. This is
+how we know the missing file that is causing the error.
+
+See: https://blog.213.se/busqueda-hackthebox/
