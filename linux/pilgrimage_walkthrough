@@ -1,6 +1,6 @@
-=====================================================================================================
+==================================================================================================
 													******** HTB - machines: Pilgrimage ********
-=====================================================================================================
+==================================================================================================
 Firstly I eported the IP as an env variable and ran an 'nmap' port scan on all ports on the target 
 machine.
 
@@ -29,7 +29,7 @@ PORT   STATE SERVICE VERSION
 |_http-server-header: nginx/1.18.0
 Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
 
-======================================================================================================
+===================================================================================================
 -- Host Enumeration:
 ====================
 OS: Linux
@@ -42,13 +42,14 @@ emily			abigchonkyboi123
 user.txt			=>	8e393fee71120c87dc6ba9487fc588ed
 root.txt			=>	11225336ed57e1d7fc6d18a928fcaef6
 
-=======================================================================================================
+==================================================================================================
 -- Walkthrough:
 ===============
-Since we have only ssh and a web server runnig on the hot, we focus on the web server since we have no
-valid user creds.
+Since we have only ssh and a web server runnig on the hot, we focus on the web server since we have 
+no valid user creds.
 
-On inspecting the web app with wfuzz, I see that there is a '.git' file path with returns a 301 respons
+On inspecting the web app with wfuzz, I see that there is a '.git' file path with returns a 301 
+response.
 
 Using the tool 'git-dumper', we can enumerate and download the entire git repo to our local machine.
 
@@ -56,8 +57,8 @@ Using the tool 'git-dumper', we can enumerate and download the entire git repo t
 ** /home/demola/.local/bin/git-dumper http://pilgrimage.htb/.git/ ./out_git
 ** file out_git/magick
 
-On further inspection of the downloaded git folder, we see and inspect the login.php file. In this file
-we see a file path to an sqlite DB '/var/db/pilgrimage'.
+On further inspection of the downloaded git folder, we see and inspect the login.php file. In this 
+file we see a file path to an sqlite DB '/var/db/pilgrimage'.
 
 ** less out_git/login.php
 
