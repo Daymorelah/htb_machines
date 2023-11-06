@@ -1,4 +1,40 @@
 This file is just a brief description of what the machines folder is all about.
 
-This folder contains all machines pawnd on the hack-the-box site.
+This folder contains all machines pawnd on the hack-the-box site. the below are the goals of working
+on the HTB retired machines:
+
+1. Root one or several retired 'easy' boxes
+2. Complete a medium box.
+3. After completing 5/10 easy or medium retired boxes, we move to exploit or first easy live box
+4. Pick an easy box with difficulty rating between 1-3 over 10.
+5. After competing a live easy box, We move to complte medium and then hard boxes.
+
+Once done with Boxes, we keep learning other academy modules to sharpen our skillset in areas we want
+to improve on.
+
+Once we are very comfortable, we begin to share walkthrough of a retired box we have rooted.
+
+Things to track are listed below:
+
+1. Root a Retired Easy Box
+2. Root a Retired Medium Box
+3. Root an Active Box
+4. Complete an Easy Challenge
+5. Share a Walkthrough of a Retired Box
+6. Complete Offensive Academy Modules
+7. Root Live Medium/Hard Boxes
+8. Complete A Track
+9. Win a Hack The Box Battlegrounds Battle
+10. Complete A Pro Lab
+
+Fortress are vulnerable labs created by companies and hosted on hack the box. Need to be Hacker rank
+
+Endgames are virtual labs that contain machines connected to a single network. They try to mimik real
+world situation we may encounter when performng pentest for a rela client. Need to be GURU rank
+
+Pro Labs simulate real-world enterprise infrastrucuture to help us test our pentestig skills. Each 
+Pro Lab has a specific scenario and level of difficulty: They are large and can take a while to 
+finish.
+
+Pro Labs require a separate subscription plan and we get a HTB Certificate of Completion.
 
