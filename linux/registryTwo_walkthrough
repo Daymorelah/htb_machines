@@ -1,0 +1,132 @@
+=================================================================================================
+													******** HTB machines - Registry Two ********
+==================================================================================================
+firstly I eported the IP as an env variable and ran an 'nmap' port scan on all ports on the target 
+machine.
+
+** export IP=10.10.11.223
+** nmap -n -Pn -p- $IP --open
+
+Nmap scan report for 10.10.11.223
+PORT     STATE SERVICE
+
+22/tcp   open  ssh
+443/tcp  open  https
+5000/tcp open  upnp
+5001/tcp open  commplex-link
+
+** nmap -n -Pn -p 22,443,5000,5001 -sC -sV $IP
+
+Nmap scan report for 10.10.11.223
+Host is up (0.13s latency).
+
+PORT     STATE SERVICE            VERSION
+22/tcp   open  ssh                OpenSSH 7.6p1 Ubuntu 4ubuntu0.7 (Ubuntu Linux; protocol 2.0)
+| ssh-hostkey: 
+|   2048 fa:b0:03:98:7e:60:c2:f3:11:82:27:a1:35:77:9f:d3 (RSA)
+|   256 f2:59:06:dc:33:b0:9f:a3:5e:b7:63:ff:61:35:9d:c5 (ECDSA)
+|_  256 e3:ac:ab:ea:2b:d6:8e:f4:1f:b0:7b:05:0a:69:a5:37 (ED25519)
+443/tcp  open  ssl/http           nginx 1.14.0 (Ubuntu)
+|_http-title: Did not follow redirect to https://www.webhosting.htb/
+| ssl-cert: Subject: organizationName=free-hosting/stateOrProvinceName=Berlin/countryName=DE
+| Not valid before: 2023-02-01T20:19:22
+|_Not valid after:  2024-02-01T20:19:22
+|_ssl-date: TLS randomness does not represent time
+|_http-server-header: nginx/1.14.0 (Ubuntu)
+5000/tcp open  ssl/http           Docker Registry (API: 2.0)
+|_http-title: Site doesn't have a title.
+| ssl-cert: Subject: commonName=*.webhosting.htb/organizationName=Acme, Inc./stateOrProvinceName=GD/countryName=CN
+| Subject Alternative Name: DNS:webhosting.htb, DNS:webhosting.htb
+| Not valid before: 2023-03-26T21:32:06
+|_Not valid after:  2024-03-25T21:32:06
+5001/tcp open  ssl/commplex-link?
+| fingerprint-strings: 
+|   FourOhFourRequest: 
+|     HTTP/1.0 404 Not Found
+|     Content-Type: text/plain; charset=utf-8
+|     X-Content-Type-Options: nosniff
+|     Date: Sun, 10 Sep 2023 04:32:39 GMT
+|     Content-Length: 10
+|     found
+|   GenericLines, Help, Kerberos, LDAPSearchReq, LPDString, RTSPRequest, SSLSessionReq, TLSSessionReq, TerminalServerCookie: 
+|     HTTP/1.1 400 Bad Request
+|     Content-Type: text/plain; charset=utf-8
+|     Connection: close
+|     Request
+|   GetRequest: 
+|     HTTP/1.0 200 OK
+|     Content-Type: text/html; charset=utf-8
+|     Date: Sun, 10 Sep 2023 04:32:08 GMT
+|     Content-Length: 26
+|     <h1>Acme auth server</h1>
+|   HTTPOptions: 
+|     HTTP/1.0 200 OK
+|     Content-Type: text/html; charset=utf-8
+|     Date: Sun, 10 Sep 2023 04:32:09 GMT
+|     Content-Length: 26
+|_    <h1>Acme auth server</h1>
+| tls-alpn: 
+|   h2
+|_  http/1.1
+|_ssl-date: TLS randomness does not represent time
+| ssl-cert: Subject: commonName=*.webhosting.htb/organizationName=Acme, Inc./stateOrProvinceName=GD/countryName=CN
+| Subject Alternative Name: DNS:webhosting.htb, DNS:webhosting.htb
+| Not valid before: 2023-03-26T21:32:06
+|_Not valid after:  2024-03-25T21:32:06
+1 service unrecognized despite returning data. If you know the service/version, please submit the following fingerprint at https://nmap.org/cgi-bin/submit.cgi?new-service :
+SF-Port5001-TCP:V=7.92%T=SSL%I=7%D=9/10%Time=64FD46C9%P=aarch64-unknown-li
+SF:nux-gnu%r(GenericLines,67,"HTTP/1\.1\x20400\x20Bad\x20Request\r\nConten
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
